@@ -38,6 +38,7 @@
 #include "throughput_central_interface.h"
 #include "throughput_ui_types.h"
 #include "throughput_common.h"
+#include "sl_simple_timer.h"
 
 // Platform specific includes
 #include "throughput_central_system.h"
@@ -124,12 +125,6 @@ static throughput_central_characteristic_found_t characteristic_found;
 static action_t action = act_none;
 static uint16_t result_handle = 0xFFFF;
 
-#define MAXTPDEVICES 32
-//static sl_bt_evt_scanner_scan_report_t ThroughputReadyDevices[MAXTPDEVICES];
-static bd_addr  ThroughputReadyDevices[MAXTPDEVICES];
-static uint8_t connection_handle_pool[MAXTPDEVICES];
-static uint8_t ThroughputReadyDevicesCounter = 0;
-
 const char *device_name = "Throughput Test"; // Device name to match against scan results.
 
 // bbb99e70-fff7-46cf-abc7-2d32c71820f2
@@ -162,6 +157,80 @@ static void throughput_central_scanning_stop(void);
 static sl_status_t throughput_central_apply_phy(throughput_phy_t phy);
 static bool throughput_central_allowlist_apply();
 static bool throughput_address_compare(uint8_t *address1, uint8_t *address2);
+
+
+#define MAXTPDEVICES 32
+//static sl_bt_evt_scanner_scan_report_t ThroughputReadyDevices[MAXTPDEVICES];
+static bd_addr  ThroughputReadyDevices[MAXTPDEVICES];
+static uint8_t connection_handle_pool[MAXTPDEVICES];
+static uint8_t ThroughputReadyDevicesCounter = 0;
+
+// Scanner timer
+static sl_simple_timer_t scanner_timer;
+static uint8_t address_type_con;
+
+
+void Connect_to_devices(uint8_t i)
+{
+  sl_status_t sc;
+
+  //static  = 0;
+  //for (uint8_t i = 0; i<ThroughputReadyDevicesCounter;i++)
+    {
+      connection_handle = i;
+
+//      // Stop scanning
+//      sc = sl_bt_scanner_stop();
+//      app_assert_status(sc);
+//
+//      // Open the connection
+
+      central_state.discovery_state = THROUGHPUT_DISCOVERY_STATE_CONN;
+      throughput_central_on_discovery_state_change(central_state.discovery_state);
+
+        sc = sl_bt_connection_open( ThroughputReadyDevices[i],
+                                    address_type_con,
+                                           central_state.phy,
+                                           &connection_handle);
+
+      // Handle if the default PHY is not supported
+      if (sc == SL_STATUS_INVALID_PARAMETER) {
+        app_log_status_warning_f(sc, "Connection PHY is not supported and set to 1M PHY" APP_LOG_NEW_LINE);
+
+        central_state.phy = sl_bt_gap_1m_phy_uncoded;
+        sc = sl_bt_connection_open(ThroughputReadyDevices[i],
+                                   address_type_con,
+                                   central_state.phy,
+                                   &connection_handle);
+
+      }
+  }
+
+
+}
+
+/**************************************************************************//**
+ * Event handler for timer
+ *****************************************************************************/
+void scanner_timer_callback(sl_simple_timer_t *timer,
+    void *data)
+{
+  sl_status_t sc;
+
+  (void)timer;
+  (void)data;
+
+  if (ThroughputReadyDevicesCounter >=2)
+    {
+
+      // Stop scanning
+      sc = sl_bt_scanner_stop();
+      app_assert_status(sc);
+      Connect_to_devices(0);
+    }
+
+
+}
 
 /**************************************************************************//**
  * Event handler for timer
@@ -206,12 +275,13 @@ void bt_on_event_central(sl_bt_msg_t *evt)
             for (uint8_t i = 0; i<ThroughputReadyDevicesCounter;i++)
               {
                 if(memcmp(ThroughputReadyDevices[i].addr,evt->data.evt_scanner_scan_report.address.addr,6 )==0) deviceOnTheList = 1;
-                //if (ThroughputReadyDevices[i] == evt->data.evt_scanner_scan_report.address) deviceOnTheList = 1;
               }
             if (deviceOnTheList == 0)
               {
                 ThroughputReadyDevices[ThroughputReadyDevicesCounter] = evt->data.evt_scanner_scan_report.address;
                 connection_handle_pool[ThroughputReadyDevicesCounter] = ThroughputReadyDevicesCounter++;
+                address_type_con = evt->data.evt_scanner_scan_report.address_type;
+
               }
           }
         else
@@ -219,52 +289,13 @@ void bt_on_event_central(sl_bt_msg_t *evt)
             // ThroughputReadyDevices[ThroughputReadyDevicesCounter] = evt->data.evt_scanner_scan_report;
              ThroughputReadyDevices[ThroughputReadyDevicesCounter] = evt->data.evt_scanner_scan_report.address;
              connection_handle_pool[ThroughputReadyDevicesCounter] = ThroughputReadyDevicesCounter++;
+             address_type_con = evt->data.evt_scanner_scan_report.address_type;
           }
 
 
 
 
-
-        if (ThroughputReadyDevicesCounter >=5)
-          {
-
-            // Stop scanning
-            sc = sl_bt_scanner_stop();
-            app_assert_status(sc);
-
-            // Open the connection
-            central_state.discovery_state = THROUGHPUT_DISCOVERY_STATE_CONN;
-            throughput_central_on_discovery_state_change(central_state.discovery_state);
-
-    //        sc = sl_bt_connection_open(evt->data.evt_scanner_scan_report.address,
-    //                                   evt->data.evt_scanner_scan_report.address_type,
-    //                                   central_state.phy,
-    //                                   &connection_handle);
-
-
-//            sc = sl_bt_connection_open( ThroughputReadyDevices[0].address,
-//                                        ThroughputReadyDevices[0].address_type,
-//                                               central_state.phy,
-//                                               &connection_handle);
-
-              sc = sl_bt_connection_open( ThroughputReadyDevices[0],
-                                          evt->data.evt_scanner_scan_report.address_type,
-                                                 central_state.phy,
-                                                 &connection_handle);
-
-            // Handle if the default PHY is not supported
-            if (sc == SL_STATUS_INVALID_PARAMETER) {
-              app_log_status_warning_f(sc, "Connection PHY is not supported and set to 1M PHY" APP_LOG_NEW_LINE);
-
-              central_state.phy = sl_bt_gap_1m_phy_uncoded;
-              sc = sl_bt_connection_open(evt->data.evt_scanner_scan_report.address,
-                                         evt->data.evt_scanner_scan_report.address_type,
-                                         central_state.phy,
-                                         &connection_handle);
-
-            }
-        }
-        // Assertion to first or second attempt to connect
+    //     Assertion to first or second attempt to connect
         app_assert_status(sc);
       } else {
         waiting_indication();
@@ -501,6 +532,8 @@ static void process_procedure_complete_event(sl_bt_msg_t *evt)
       if (!procedure_result) {
         if (characteristic_found.all == THROUGHPUT_CENTRAL_CHARACTERISTICS_ALL) {
           central_state.discovery_state = THROUGHPUT_DISCOVERY_STATE_FINISHED;
+
+
           throughput_central_on_discovery_state_change(central_state.discovery_state);
           sc = sl_bt_gatt_set_characteristic_notification(connection_handle, notifications_handle, sl_bt_gatt_notification);
           app_assert_status(sc);
@@ -547,6 +580,10 @@ static void process_procedure_complete_event(sl_bt_msg_t *evt)
       if (!procedure_result) {
         central_state.state = THROUGHPUT_STATE_SUBSCRIBED;
         throughput_central_on_state_change(central_state.state);
+        if(connection_handle < ThroughputReadyDevicesCounter)
+          {
+            Connect_to_devices(connection_handle++);
+          }
         // Start RSSI refresh timer
         timer_refresh_rssi_start();
       }
@@ -807,6 +844,13 @@ void throughput_central_scanning_start(void)
 
   // Start scanning - looking for peripheral devices
   sc = sl_bt_scanner_start(central_state.scan_phy, scanner_discover_generic);
+  app_assert_status(sc);
+
+  sc = sl_simple_timer_start(&scanner_timer,
+                             3*THROUGHPUT_CENTRAL_REFRESH_TIMER_PERIOD,
+                             scanner_timer_callback,
+                             NULL,
+                             false);
   app_assert_status(sc);
 }
 
@@ -2095,5 +2139,17 @@ void cli_throughput_central_allowlist_get(sl_cli_command_arg_t *arguments)
   }
   CLI_RESPONSE("---------------------" APP_LOG_NEW_LINE);
 }
+
+///**************************************************************************//**
+// * Timer callback
+// *****************************************************************************/
+//void app_button_timer_callback(sl_simple_timer_t *timer, void *data)
+//{
+//  (void) data;
+//  (void) timer;
+//  button_timer_rised = true;
+//  app_test(true);
+//}
+
 
 #endif // SL_CATALOG_CLI_PRESENT
