@@ -160,6 +160,7 @@ static bool throughput_address_compare(uint8_t *address1, uint8_t *address2);
 
 
 #define MAXTPDEVICES 32
+#define NUMBER_OF_CONNECTIONS 3 //
 //static sl_bt_evt_scanner_scan_report_t ThroughputReadyDevices[MAXTPDEVICES];
 static bd_addr  ThroughputReadyDevices[MAXTPDEVICES];
 static uint8_t connection_handle_pool[MAXTPDEVICES];
@@ -220,7 +221,7 @@ void scanner_timer_callback(sl_simple_timer_t *timer,
   (void)timer;
   (void)data;
 
-  if (ThroughputReadyDevicesCounter >=2)
+  if (ThroughputReadyDevicesCounter >=(NUMBER_OF_CONNECTIONS-1))
     {
 
       // Stop scanning
