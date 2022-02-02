@@ -165,7 +165,7 @@ void app_test(bool start)
   sl_status_t sc;
   if (start) {
     // Start test
-    app_log_info("Starting test..." APP_LOG_NEW_LINE);
+    app_log_info("\n\r Starting test...\n\r" APP_LOG_NEW_LINE);
     if (role == THROUGHPUT_ROLE_PERIPHERAL) {
       sc = throughput_peripheral_start(type);
       if (sc != SL_STATUS_OK) {

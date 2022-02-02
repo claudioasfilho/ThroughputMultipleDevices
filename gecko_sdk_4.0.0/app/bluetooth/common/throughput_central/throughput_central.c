@@ -1,4 +1,4 @@
-/***************************************************************************//**
+  /***************************************************************************//**
  * @file
  * @brief Throughput test application - platform interface
  *******************************************************************************
@@ -116,7 +116,7 @@ static uint8_t received_counter = 0;
 static bool first_packet = true;
 
 // BLE connection handle
-static uint8_t connection_handle = 0xFF;
+static uint8_t connection_handle = 0;//0xFF;
 static uint32_t  service_handle = 0xFFFFFFFF;
 static uint16_t  notifications_handle = 0xFFFF;
 static uint16_t  indications_handle = 0xFFFF;
@@ -164,7 +164,12 @@ static bool throughput_address_compare(uint8_t *address1, uint8_t *address2);
 //static sl_bt_evt_scanner_scan_report_t ThroughputReadyDevices[MAXTPDEVICES];
 static bd_addr  ThroughputReadyDevices[MAXTPDEVICES];
 static uint8_t connection_handle_pool[MAXTPDEVICES];
+//static uint8_t connectedDevices[MAXTPDEVICES];
+//static uint8_t disconnectedDevices[MAXTPDEVICES];
+//uint8_t *pConDev = connectedDevices;
+
 static uint8_t ThroughputReadyDevicesCounter = 0;
+static uint8_t ConnectedDevicesCounter = 0;
 
 // Scanner timer
 static sl_simple_timer_t scanner_timer;
@@ -178,8 +183,11 @@ void Connect_to_devices(uint8_t i)
   //static  = 0;
   //for (uint8_t i = 0; i<ThroughputReadyDevicesCounter;i++)
     {
-      connection_handle = i;
+      app_log("Connect_to_devices Function\n\r\n\r");
 
+      app_log("Connection Handle %d \n\r ",connection_handle );
+      connection_handle = i;
+      app_log("i =  %d \n\r ",connection_handle );
 //      // Stop scanning
 //      sc = sl_bt_scanner_stop();
 //      app_assert_status(sc);
@@ -221,7 +229,7 @@ void scanner_timer_callback(sl_simple_timer_t *timer,
   (void)timer;
   (void)data;
 
-  if (ThroughputReadyDevicesCounter >=(NUMBER_OF_CONNECTIONS-1))
+ // if (ThroughputReadyDevicesCounter >=(NUMBER_OF_CONNECTIONS-1))
     {
 
       // Stop scanning
@@ -305,6 +313,15 @@ void bt_on_event_central(sl_bt_msg_t *evt)
 
     case sl_bt_evt_connection_opened_id:
       //Process the opened connection
+
+//      *pConDev =evt->data.evt_connection_opened.connection;
+//      pConDev++;
+
+      connection_handle_pool[ConnectedDevicesCounter++] = evt->data.evt_connection_opened.connection;
+
+      app_log("Connection Handle from Stack %d Connected\n\r",evt->data.evt_connection_opened.connection );
+      app_log("Logical Connection Handle %d Connected\n\r",connection_handle );
+
       sc = sl_bt_connection_set_parameters(connection_handle,
                                            central_state.connection_interval_min,
                                            central_state.connection_interval_max,
@@ -412,6 +429,11 @@ void bt_on_event_central(sl_bt_msg_t *evt)
       break;
 
     case sl_bt_evt_connection_closed_id:
+
+
+      app_log("Connection Handle %d DISCONNECTED \n\r",evt->data.evt_connection_closed.connection );
+      app_log("Logical Connection Handle %d DISCONNECTED\n\r",connection_handle );
+
       // Stop RSSI refresh timer
       timer_refresh_rssi_stop();
       // Notify state change
@@ -424,6 +446,7 @@ void bt_on_event_central(sl_bt_msg_t *evt)
       // Start scanning
       throughput_central_scanning_start();
       break;
+
     case sl_bt_evt_connection_rssi_id:
       central_state.rssi = evt->data.evt_connection_rssi.rssi;
       throughput_central_on_rssi_change(central_state.rssi);
@@ -581,6 +604,8 @@ static void process_procedure_complete_event(sl_bt_msg_t *evt)
       if (!procedure_result) {
         central_state.state = THROUGHPUT_STATE_SUBSCRIBED;
         throughput_central_on_state_change(central_state.state);
+
+        //This is where it will connect to all available devices on a round-robin fashion
         if(connection_handle < ThroughputReadyDevicesCounter)
           {
             Connect_to_devices(connection_handle++);
@@ -622,7 +647,7 @@ static void check_characteristic_uuid(sl_bt_msg_t *evt)
 
 static void reset_variables(void)
 {
-  connection_handle = 0xFF;
+  connection_handle = 0;
   service_handle = 0xFFFFFFFF;
   notifications_handle = 0xFFFF;
   indications_handle = 0xFFFF;
@@ -916,6 +941,13 @@ void handle_throughput_central_stop(bool send_transmission_on)
     central_state.state = THROUGHPUT_STATE_SUBSCRIBED;
     throughput_central_on_state_change(central_state.state);
 
+    //CF - This is where we do the Round-Robin on the test
+    if(connection_handle < ThroughputReadyDevicesCounter)
+              {
+                connection_handle++;
+                handle_throughput_central_start(true);
+              }
+
     // Start RSSI refresh timer
     timer_refresh_rssi_start();
   }
@@ -956,6 +988,9 @@ void handle_throughput_central_start(bool send_transmission_on)
     sl_power_manager_add_em_requirement(SL_POWER_MANAGER_EM1);
   }
   #endif
+
+
+  app_log("Connection Handle during TP Test =  %d \n\r",connection_handle );
 
   if (send_transmission_on) {
     // This triggers the data transmission on remote side
@@ -1156,7 +1191,22 @@ sl_status_t throughput_central_start(void)
 {
   sl_status_t res = SL_STATUS_OK;
   if (enabled && central_state.state == THROUGHPUT_STATE_SUBSCRIBED) {
-    handle_throughput_central_start(true);
+
+      //CF - Set the connect Handle to 0 in order to start with the first connection
+
+      app_log("List of connected devices to be used on the Tp Test\n\r");
+      for(int i=0; i<ThroughputReadyDevicesCounter;i++)
+        {
+          app_log("Connected device %d\n\r",connection_handle_pool[i] );
+
+        }
+
+
+      connection_handle = 1;
+
+      handle_throughput_central_start(true);
+
+
   } else {
     res = SL_STATUS_INVALID_STATE;
   }
